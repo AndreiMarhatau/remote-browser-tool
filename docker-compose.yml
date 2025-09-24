@@ -1,0 +1,21 @@
+services:
+  executor:
+    build: .
+    image: remote-browser-tool:latest
+    command: executor --host 0.0.0.0 --port 9001
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    ports:
+      - "9001:9001"
+      - "8765:8765"
+      - "5900:5900"
+    volumes:
+      - executor_artifacts:/app/executor_artifacts
+  admin:
+    build: .
+    image: remote-browser-tool:latest
+    command: admin --executor default=http://executor:9001 --host 0.0.0.0 --port 8080
+    ports:
+      - "8080:8080"
+volumes:
+  executor_artifacts:
