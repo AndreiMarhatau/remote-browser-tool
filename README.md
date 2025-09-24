@@ -11,14 +11,18 @@ The steps below keep everything Docker-first so you can experiment without insta
    ```bash
    docker build -t remote-browser-tool .
    ```
-2. Export an LLM API key (the executor uses it to talk to the model):
+2. Export the OpenAI settings (the executor uses them to talk to the model):
    ```bash
-   export OPENAI_API_KEY=sk-...
+   export REMOTE_BROWSER_TOOL_LLM__PROVIDER=openai
+   export REMOTE_BROWSER_TOOL_LLM__MODEL=gpt-4o-mini
+   export REMOTE_BROWSER_TOOL_LLM__API_KEY=sk-...
    ```
 3. Run a one-off task in an interactive container:
    ```bash
    docker run --rm -it \
-     -e OPENAI_API_KEY \
+    -e REMOTE_BROWSER_TOOL_LLM__PROVIDER \
+    -e REMOTE_BROWSER_TOOL_LLM__MODEL \
+    -e REMOTE_BROWSER_TOOL_LLM__API_KEY \
      -p 8765:8765 -p 5900:5900 \
      remote-browser-tool \
      run \
@@ -53,11 +57,13 @@ Each section below adds a small tweak. Pick the one you need and keep the rest o
    ```
 2. Mount the file when launching a task container:
    ```bash
-   docker run --rm -it \
-     -e OPENAI_API_KEY \
-     -v $(pwd)/task.yaml:/app/task.yaml:ro \
-     -p 8765:8765 -p 5900:5900 \
-     remote-browser-tool run --config /app/task.yaml
+    docker run --rm -it \
+      -e REMOTE_BROWSER_TOOL_LLM__PROVIDER \
+      -e REMOTE_BROWSER_TOOL_LLM__MODEL \
+      -e REMOTE_BROWSER_TOOL_LLM__API_KEY \
+      -v $(pwd)/task.yaml:/app/task.yaml:ro \
+      -p 8765:8765 -p 5900:5900 \
+      remote-browser-tool run --config /app/task.yaml
    ```
 
 ### Run the executor as a long-lived service
@@ -69,7 +75,9 @@ docker network create remote-browser-tool || true
 
 docker run -d --name rbt-executor \
   --network remote-browser-tool \
-  -e OPENAI_API_KEY \
+  -e REMOTE_BROWSER_TOOL_LLM__PROVIDER \
+  -e REMOTE_BROWSER_TOOL_LLM__MODEL \
+  -e REMOTE_BROWSER_TOOL_LLM__API_KEY \
   -p 9001:9001 -p 8765:8765 -p 5900:5900 \
   -v executor_artifacts:/app/executor_artifacts \
   remote-browser-tool executor --host 0.0.0.0 --port 9001
@@ -112,10 +120,14 @@ docker run --rm --name rbt-admin \
 
 If you prefer a single command that brings up both services and keeps artifacts in a named volume:
 
-1. Copy the environment template and set your key (only the executor consumes it):
+1. Copy the environment template and set your OpenAI settings (only the executor consumes them):
    ```bash
    cp .env.example .env
-   echo "OPENAI_API_KEY=sk-..." >> .env
+   cat <<'VARS' >> .env
+REMOTE_BROWSER_TOOL_LLM__PROVIDER=openai
+REMOTE_BROWSER_TOOL_LLM__MODEL=gpt-4o-mini
+REMOTE_BROWSER_TOOL_LLM__API_KEY=sk-...
+VARS
    ```
 2. Start the services:
    ```bash

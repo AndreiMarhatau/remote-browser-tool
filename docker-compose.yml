@@ -4,7 +4,9 @@ services:
     image: remote-browser-tool:latest
     command: executor --host 0.0.0.0 --port 9001
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REMOTE_BROWSER_TOOL_LLM__PROVIDER=${REMOTE_BROWSER_TOOL_LLM__PROVIDER:-openai}
+      - REMOTE_BROWSER_TOOL_LLM__MODEL=${REMOTE_BROWSER_TOOL_LLM__MODEL:-gpt-4o-mini}
+      - REMOTE_BROWSER_TOOL_LLM__API_KEY=${REMOTE_BROWSER_TOOL_LLM__API_KEY}
     ports:
       - "9001:9001"
       - "8765:8765"
