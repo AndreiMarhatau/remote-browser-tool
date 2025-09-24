@@ -114,6 +114,11 @@ class PlaywrightBrowserSession(BrowserSession):
             last_action=self._page.evaluate("document.activeElement?.outerHTML") or None,
         )
 
+    def screenshot(self) -> bytes:
+        if not self._page:
+            raise BrowserActionError("Browser session is not started")
+        return self._page.screenshot(full_page=False)
+
 
 def _to_timeout(timeout: Optional[float]) -> Optional[int]:
     if timeout is None:

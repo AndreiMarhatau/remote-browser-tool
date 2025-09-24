@@ -53,6 +53,10 @@ class UserInterventionRequest(BaseModel):
         default=False,
         description="If True, orchestrator may finish without waiting for manual return.",
     )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Arbitrary metadata for portals or admin tooling.",
+    )
 
 
 class DirectiveStatus(str, enum.Enum):

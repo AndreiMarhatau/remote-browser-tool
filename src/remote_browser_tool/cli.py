@@ -6,7 +6,7 @@ import logging
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_version
 from pathlib import Path
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
 
 import typer
 
@@ -43,58 +43,58 @@ def version() -> None:
 @app.command()
 def run(
     config_path: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--config", "-c", help="Path to YAML configuration."),
     ] = None,
     env_file: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             "--env-file",
             help="Path to an .env file with default configuration values.",
         ),
     ] = None,
     task: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--task", help="Override task description."),
     ] = None,
     goal: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--goal", help="Override task success criteria."),
     ] = None,
     llm_provider: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--llm-provider", help="LLM provider to use."),
     ] = None,
     model: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--model", help="LLM model identifier."),
     ] = None,
     api_key: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--api-key", help="API key for the LLM provider."),
     ] = None,
     headless: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--headless/--headed", help="Run the browser in headless mode (or headed)."),
     ] = None,
     enable_vnc: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--enable-vnc/--disable-vnc", help="Enable or disable the VNC bridge."),
     ] = None,
     profile_path: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--profile-path", help="Browser user data directory to reuse between runs."),
     ] = None,
     portal_port: Annotated[
-        Optional[int],
+        int | None,
         typer.Option("--portal-port", help="HTTP port for the user portal."),
     ] = None,
     portal_host: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--portal-host", help="Binding address for the user portal."),
     ] = None,
     memory_max: Annotated[
-        Optional[int],
+        int | None,
         typer.Option("--memory-max", help="Maximum stored memory entries."),
     ] = None,
 ) -> None:
@@ -107,7 +107,7 @@ def run(
             overrides["task"]["description"] = task
         if goal:
             overrides["task"]["goal"] = goal
-    if any([llm_provider, model, api_key]):
+    if any((llm_provider, model, api_key)):
         overrides.setdefault("llm", {})
         if llm_provider:
             overrides["llm"]["provider"] = llm_provider
@@ -153,6 +153,67 @@ def run(
     if not success:
         raise typer.Exit(code=1)
     typer.echo("Task completed successfully.")
+
+
+@app.command()
+def executor(
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Interface to bind the executor service."),
+    ] = "0.0.0.0",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Port for the executor service."),
+    ] = 8001,
+    reload: Annotated[
+        bool,
+        typer.Option("--reload", help="Enable autoreload (development only)."),
+    ] = False,
+) -> None:
+    """Run the executor HTTP service for remote management."""
+
+    try:
+        import uvicorn
+    except ImportError as exc:  # pragma: no cover - handled at runtime
+        raise typer.Exit(code=1) from exc
+    from .executor.service import app as executor_app
+
+    uvicorn.run(executor_app, host=host, port=port, reload=reload)
+
+
+@app.command()
+def admin(
+    executor: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--executor",
+            help="Executor endpoint (format label=url or url).",
+        ),
+    ] = None,
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Interface to bind the admin service."),
+    ] = "0.0.0.0",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Port for the admin service."),
+    ] = 8000,
+    reload: Annotated[
+        bool,
+        typer.Option("--reload", help="Enable autoreload (development only)."),
+    ] = False,
+) -> None:
+    """Run the admin portal for managing executor instances."""
+
+    try:
+        import uvicorn
+    except ImportError as exc:  # pragma: no cover - handled at runtime
+        raise typer.Exit(code=1) from exc
+    from .admin.service import create_admin_app
+
+    specs = executor or []
+    admin_app = create_admin_app(specs)
+    uvicorn.run(admin_app, host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,97 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card">
+  <h2>{{ endpoint.label }} &mdash; {{ endpoint.base_url }}</h2>
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+  {% if health %}
+    <p>
+      <strong>Browser:</strong>
+      <span class="status-pill {{ status_class(health.browser.status) }}">{{ health.browser.status|capitalize }}</span>
+      {% if health.browser.detail %} &ndash; {{ health.browser.detail }}{% endif %}
+    </p>
+    <p>
+      <strong>LLM:</strong>
+      <span class="status-pill {{ status_class(health.llm.status) }}">{{ health.llm.status|replace('_', ' ')|capitalize }}</span>
+      {% if health.llm.provider %} ({{ health.llm.provider }}){% endif %}
+    </p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>Enqueue Task</h3>
+  <form method="post" action="/executors/{{ endpoint.key }}/tasks">
+    <label for="description">Description</label>
+    <input type="text" name="description" id="description" placeholder="Describe the task" required />
+
+    <label for="goal">Goal</label>
+    <input type="text" name="goal" id="goal" placeholder="Optional success criteria" />
+
+    <label for="llm_provider">LLM Provider</label>
+    <select name="llm_provider" id="llm_provider">
+      <option value="mock">Mock (scripted)</option>
+      <option value="local">Local</option>
+      <option value="openai">OpenAI-compatible</option>
+    </select>
+
+    <label for="llm_model">LLM Model</label>
+    <input type="text" name="llm_model" id="llm_model" placeholder="e.g. gpt-4o" />
+
+    <label for="llm_api_key">LLM API Key</label>
+    <input type="password" name="llm_api_key" id="llm_api_key" placeholder="Optional override" />
+
+    <label><input type="checkbox" name="enable_vnc" checked /> Enable VNC bridge</label>
+    <label><input type="checkbox" name="headless" /> Headless browser</label>
+
+    <label for="task_env">Per-task environment overrides (KEY=VALUE)</label>
+    <textarea name="task_env" id="task_env" placeholder="REMOTE_BROWSER_TOOL_LLM__API_KEY=sk-...\nOPENAI_API_KEY=..." ></textarea>
+
+    <input type="submit" value="Enqueue" />
+  </form>
+</div>
+
+<div class="card">
+  <h3>Executor Settings</h3>
+  <form method="post" action="/executors/{{ endpoint.key }}/settings/env">
+    <label for="env_text">Environment overrides (KEY=VALUE)</label>
+    <textarea name="env_text" id="env_text" placeholder="REMOTE_BROWSER_TOOL_LLM__PROVIDER=openai&#10;OPENAI_API_KEY=...">{% for key, value in env_overrides.items() %}{{ key }}={{ value }}
+{% endfor %}</textarea>
+    <input type="submit" value="Update" />
+  </form>
+</div>
+
+<div class="card">
+  <h3>Tasks</h3>
+  {% if tasks|length == 0 %}
+    <p>No tasks have been enqueued yet.</p>
+  {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Started</th>
+          <th>Finished</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in tasks %}
+          <tr>
+            <td>{{ task.id }}</td>
+            <td>{{ task.description }}</td>
+            <td><span class="status-pill {{ status_class(task.status) }}">{{ task.status|replace('_', ' ')|capitalize }}</span></td>
+            <td>{{ format_datetime(task.created_at) }}</td>
+            <td>{{ format_datetime(task.started_at) }}</td>
+            <td>{{ format_datetime(task.finished_at) }}</td>
+            <td><a href="/executors/{{ endpoint.key }}/tasks/{{ task.id }}">View</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+{% endblock %}

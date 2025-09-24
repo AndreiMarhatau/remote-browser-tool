@@ -1,0 +1,121 @@
+{% extends "layout.html" %}
+{% block content %}
+<a href="/executors/{{ endpoint.key }}">&larr; Back to tasks</a>
+<div class="card">
+  <h2>Task {{ task.id if task else task_id }}</h2>
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% elif not task %}
+    <p class="error">Task could not be loaded.</p>
+  {% else %}
+    <p><strong>Description:</strong> {{ task.description }}</p>
+    {% if task.goal %}<p><strong>Goal:</strong> {{ task.goal }}</p>{% endif %}
+    <p>
+      <strong>Status:</strong>
+      <span class="status-pill {{ status_class(task.status) }}">{{ task.status|replace('_', ' ')|capitalize }}</span>
+    </p>
+    <p><strong>Created:</strong> {{ format_datetime(task.created_at) }}</p>
+    <p><strong>Started:</strong> {{ format_datetime(task.started_at) }}</p>
+    <p><strong>Finished:</strong> {{ format_datetime(task.finished_at) }}</p>
+    {% if task.error %}<p class="error">{{ task.error }}</p>{% endif %}
+
+    {% if task.current_request %}
+      <div class="card">
+        <h3>Manual Intervention</h3>
+        <p><strong>Reason:</strong> {{ task.current_request.reason }}</p>
+        <p><strong>Instructions:</strong> {{ task.current_request.instructions }}</p>
+        {% if task.current_request.connection %}
+          <p><strong>VNC:</strong> {{ task.current_request.connection.host }}:{{ task.current_request.connection.port }} ({{ task.current_request.connection.display }})</p>
+        {% endif %}
+        <p><strong>Started:</strong> {{ format_datetime(task.current_request.started_at) }}</p>
+        <form method="post" action="/executors/{{ endpoint.key }}/tasks/{{ task.id }}/resume" class="inline">
+          <button type="submit">Resume task</button>
+        </form>
+      </div>
+    {% else %}
+      <div class="card">
+        <h3>Pause Task</h3>
+        <form method="post" action="/executors/{{ endpoint.key }}/tasks/{{ task.id }}/pause">
+          <label for="reason">Reason</label>
+          <input type="text" id="reason" name="reason" value="Manual review from admin" />
+          <label for="instructions">Instructions</label>
+          <textarea id="instructions" name="instructions">Take control of the browser, resolve the issue, and resume.</textarea>
+          <input type="submit" value="Pause" />
+        </form>
+      </div>
+    {% endif %}
+
+    <div class="card">
+      <h3>Recent Notifications</h3>
+      {% if task.logs|length == 0 %}
+        <p>No notifications recorded.</p>
+      {% else %}
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Level</th><th>Message</th></tr>
+          </thead>
+          <tbody>
+            {% for log in task.logs[:20] %}
+              <tr>
+                <td>{{ format_datetime(log.timestamp) }}</td>
+                <td>{{ log.level|upper }}</td>
+                <td>{{ log.message }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h3>Memory</h3>
+      {% if task.memory|length == 0 %}
+        <p>No memory entries recorded.</p>
+      {% else %}
+        <ul class="list">
+          {% for item in task.memory %}
+            <li><strong>{{ format_datetime(item.created_at) }}:</strong> {{ item.content }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h3>Actions</h3>
+      {% if task.actions|length == 0 %}
+        <p>No browser actions recorded.</p>
+      {% else %}
+        <table>
+          <thead>
+            <tr><th>#</th><th>Action</th><th>Resulting state</th><th>Screenshot</th></tr>
+          </thead>
+          <tbody>
+            {% for action in task.actions %}
+              <tr>
+                <td>{{ action.index }}</td>
+                <td>{{ action.action }}</td>
+                <td>{{ action.resulting_state }}</td>
+                <td>
+                  {% if action.screenshot %}
+                    <a href="/executors/{{ endpoint.key }}/tasks/{{ task.id }}/screenshots/{{ action.screenshot }}" target="_blank">View</a>
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+      {% if screenshots|length > 0 %}
+        <p>All screenshots:</p>
+        <ul class="list">
+          {% for shot in screenshots %}
+            <li><a href="/executors/{{ endpoint.key }}/tasks/{{ task.id }}/screenshots/{{ shot }}" target="_blank">{{ shot }}</a></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

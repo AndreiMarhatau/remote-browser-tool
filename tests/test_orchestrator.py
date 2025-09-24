@@ -12,6 +12,7 @@ from remote_browser_tool.models import (
     UserInterventionRequest,
 )
 from remote_browser_tool.notifications.base import Notifier
+from remote_browser_tool.orchestrator.control import ManualPauseController
 from remote_browser_tool.orchestrator.runner import Orchestrator
 from remote_browser_tool.user_portal.base import UserInteractionPortal
 
@@ -39,6 +40,9 @@ class StubBrowserSession(BrowserSession):
 
     def snapshot(self) -> BrowserState:
         return self.state
+
+    def screenshot(self) -> bytes:
+        return b"stub-screenshot"
 
 
 class CollectingNotifier(Notifier):
@@ -165,4 +169,37 @@ def test_orchestrator_manual_step_timeout():
     event_types = [event.type for event in notifier.events]
     assert "task_failed" not in event_types  # failure due to timeout triggers orchestrator_error
     assert "orchestrator_error" in event_types
+
+
+def test_orchestrator_manual_pause_flow():
+    directives = [
+        LLMDirective(status=DirectiveStatus.CONTINUE),
+        LLMDirective(status=DirectiveStatus.FINISHED, message="Done"),
+    ]
+    llm = ScriptedLLM(directives)
+    browser = StubBrowserSession()
+    memory = InMemoryStore(max_entries=10)
+    notifier = CollectingNotifier()
+    portal = StubPortal(finish=True)
+    controller = ManualPauseController()
+    requested = controller.request_pause(
+        reason="Admin requested pause",
+        instructions="Take over via VNC",
+    )
+    assert requested is True
+
+    orchestrator = Orchestrator(
+        config=build_config(),
+        llm=llm,
+        browser=browser,
+        memory=memory,
+        notifier=notifier,
+        user_portal=portal,
+        manual_controller=controller,
+    )
+    success = orchestrator.run()
+    assert success is True
+    assert portal.request is not None
+    assert portal.request.metadata.get("source") == "manual_pause"
+    assert controller.get_active() is None
 

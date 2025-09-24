@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..notifications.base import Notifier
 from ..user_portal.base import UserInteractionPortal
+from .control import ManualPauseController
 from .prompt_builder import PromptBuilder
 
 LOGGER = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class Orchestrator:
         notifier: Notifier,
         user_portal: Optional[UserInteractionPortal] = None,
         prompt_builder: Optional[PromptBuilder] = None,
+        manual_controller: Optional[ManualPauseController] = None,
     ) -> None:
         self._config = config
         self._llm = llm
@@ -46,6 +48,7 @@ class Orchestrator:
         self._notifier = notifier
         self._user_portal = user_portal
         self._prompt_builder = prompt_builder or PromptBuilder()
+        self._manual_controller = manual_controller
         self._history: list[ConversationTurn] = list(self._llm.start_conversation())
 
     def run(self) -> bool:
@@ -71,6 +74,13 @@ class Orchestrator:
             self._browser.start()
             state = self._browser.snapshot()
             while True:
+                if self._manual_controller:
+                    pending = self._manual_controller.consume_pending()
+                    if pending:
+                        self._handle_user_intervention(pending.request)
+                        self._manual_controller.clear_active()
+                        state = self._browser.snapshot()
+                        continue
                 directive = self._plan_next_step(state)
                 if directive.memory_to_write:
                     for item in directive.memory_to_write:
@@ -91,19 +101,14 @@ class Orchestrator:
                     request = directive.user_request or self._default_user_request(
                         self._config.task
                     )
-                    event = self._user_portal.request_intervention(request)
-                    self._notifier.notify(event)
-                    completed = self._user_portal.wait_until_finished(
-                        self._config.wait_for_user_timeout
-                    )
-                    if not completed:
-                        raise TimeoutError("User intervention timed out")
-                    self._history.append(
-                        ConversationTurn(
-                            role="system",
-                            content="User confirmed manual step completed.",
-                        ),
-                    )
+                    if "source" not in request.metadata:
+                        request.metadata = {
+                            **request.metadata,
+                            "source": "llm_wait",
+                        }
+                    self._handle_user_intervention(request)
+                    if self._manual_controller:
+                        self._manual_controller.clear_active()
                     state = self._browser.snapshot()
                     continue
                 if directive.status == DirectiveStatus.FINISHED:
@@ -182,6 +187,23 @@ class Orchestrator:
         return UserInterventionRequest(
             reason=f"Assistance needed while working on: {task.description}",
             instructions="Please resolve the blocking step in the browser and click 'Finished'.",
+        )
+
+    def _handle_user_intervention(self, request: UserInterventionRequest) -> None:
+        if not self._user_portal:
+            raise RuntimeError("User interaction requested but no portal configured")
+        event = self._user_portal.request_intervention(request)
+        self._notifier.notify(event)
+        completed = self._user_portal.wait_until_finished(
+            self._config.wait_for_user_timeout
+        )
+        if not completed:
+            raise TimeoutError("User intervention timed out")
+        self._history.append(
+            ConversationTurn(
+                role="system",
+                content="User confirmed manual step completed.",
+            ),
         )
 
     def _notify_vnc_ready(self, info: VNCConnectionInfo) -> None:
