@@ -113,7 +113,7 @@ docker run --rm -it \
   -p 8765:8765 -p 5900:5900 \
   remote-browser-tool \
   run --config /app/task.yaml
-```
+  
 
 Mount a host directory with configuration or browser profiles as needed (e.g. `-v $(pwd)/data:/app/data`).
 
