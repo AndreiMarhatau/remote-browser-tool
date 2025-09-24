@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import os
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -28,26 +27,6 @@ from .models import TaskActionRecord, TaskData, TaskLogEntry, TaskStatus
 from .portal import ActiveIntervention, ExecutorUserPortal
 
 LOGGER = logging.getLogger(__name__)
-
-
-class EnvironmentOverride:
-    """Context manager that temporarily injects environment variables."""
-
-    def __init__(self, overrides: dict[str, str]) -> None:
-        self._overrides = overrides
-        self._original: dict[str, str | None] = {}
-
-    def __enter__(self) -> None:
-        for key, value in self._overrides.items():
-            self._original[key] = os.environ.get(key)
-            os.environ[key] = value
-
-    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: D401 - standard context protocol
-        for key, original in self._original.items():
-            if original is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = original
 
 
 class TaskRecorder:
@@ -110,7 +89,6 @@ class TaskRunner:
         *,
         config: RunnerConfig,
         base_artifact_dir: Path,
-        env_overrides: dict[str, str],
     ) -> None:
         task_id = uuid.uuid4().hex
         self._task = TaskData(
@@ -120,7 +98,6 @@ class TaskRunner:
         )
         self._lock = threading.Lock()
         self._config = config
-        self._env_overrides = env_overrides
         self._artifact_dir = base_artifact_dir / task_id
         self._recorder = TaskRecorder(self._task, self._artifact_dir)
         self._manual_controller = ManualPauseController()
@@ -166,7 +143,16 @@ class TaskRunner:
         return sorted([path.name for path in self._artifact_dir.glob("step_*.png")])
 
     def get_screenshot_path(self, name: str) -> Path:
-        return self._artifact_dir / name
+        candidate = Path(name)
+        if candidate.is_absolute():
+            raise ValueError("Screenshot name must be relative")
+        base_dir = self._artifact_dir.resolve()
+        resolved = (base_dir / candidate).resolve()
+        try:
+            resolved.relative_to(base_dir)
+        except ValueError as exc:
+            raise ValueError("Screenshot name escapes artifact directory") from exc
+        return resolved
 
     def mark_intervention_finished(self) -> bool:
         return self.resume()
@@ -178,9 +164,8 @@ class TaskRunner:
             self._task.status = TaskStatus.RUNNING
             self._task.started_at = datetime.now(timezone.utc)
         try:
-            with EnvironmentOverride(self._env_overrides):
-                orchestrator = self._build_orchestrator()
-                success = orchestrator.run()
+            orchestrator = self._build_orchestrator()
+            success = orchestrator.run()
             with self._lock:
                 self._result = success
                 self._task.finished_at = datetime.now(timezone.utc)

@@ -4,6 +4,7 @@ import copy
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from remote_browser_tool.browser.base import BrowserSession, BrowserState
@@ -111,7 +112,6 @@ def test_task_runner_records_artifacts(
     runner = TaskRunner(
         config=runner_config,
         base_artifact_dir=tmp_path,
-        env_overrides={},
     )
     runner._run()  # execute synchronously for testing
     data = runner.snapshot()
@@ -124,6 +124,8 @@ def test_task_runner_records_artifacts(
     assert action_record.screenshot_path.exists()
     assert runner.list_screenshots()
     assert data.memory and data.memory[0].content == "visited"
+    with pytest.raises(ValueError):
+        runner.get_screenshot_path("../secret.png")
 
 
 class FakeRunner:
@@ -133,7 +135,6 @@ class FakeRunner:
         self,
         config: RunnerConfig,
         base_artifact_dir: Path,
-        env_overrides: dict[str, str],
     ) -> None:
         FakeRunner.counter += 1
         self.task_id = f"task-{FakeRunner.counter}"
@@ -172,7 +173,13 @@ class FakeRunner:
         return ["preview.png"]
 
     def get_screenshot_path(self, name: str) -> Path:
-        return self._artifact_dir / name
+        base_dir = self._artifact_dir.resolve()
+        resolved = (base_dir / name).resolve()
+        try:
+            resolved.relative_to(base_dir)
+        except ValueError as exc:
+            raise ValueError("Screenshot name escapes artifact directory") from exc
+        return resolved
 
 
 def test_executor_api_endpoints(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -200,6 +207,12 @@ def test_executor_api_endpoints(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert response.status_code == 200
     task_id = response.json()["id"]
 
+    rejection = client.post(
+        "/tasks",
+        json={"config": payload["config"], "env": {"OPENAI_API_KEY": "abc"}},
+    )
+    assert rejection.status_code == 400
+
     listing = client.get("/tasks")
     assert listing.status_code == 200
     assert listing.json()[0]["id"] == task_id
@@ -226,3 +239,6 @@ def test_executor_api_endpoints(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     screenshot = client.get(f"/tasks/{task_id}/screenshots/preview.png")
     assert screenshot.status_code == 200
     assert screenshot.content == b"fake"
+    with pytest.raises(HTTPException) as exc_info:
+        executor_service.download_screenshot(task_id, "../../secret")
+    assert exc_info.value.status_code == 400

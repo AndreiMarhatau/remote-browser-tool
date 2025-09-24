@@ -100,7 +100,7 @@ remote-browser-tool admin \
 
 From the portal you can:
 
-- Enqueue tasks with a simple form, including per-task environment overrides.
+- Enqueue tasks with a simple form that relies on executor-level configuration defaults.
 - Monitor live task lists, status transitions, and detailed step histories.
 - Browse orchestrator notifications, memory entries, and browser actions
   (with linked screenshots captured after each action).

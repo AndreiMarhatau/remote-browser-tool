@@ -88,9 +88,8 @@ class ExecutorClient:
         self,
         *,
         config: Dict[str, Any],
-        env: Optional[Dict[str, str]] = None,
     ) -> ExecutorTaskSummary:
-        payload = {"config": config, "env": env or {}}
+        payload = {"config": config}
         async with httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout) as client:
             response = await client.post("/tasks", json=payload)
             response.raise_for_status()

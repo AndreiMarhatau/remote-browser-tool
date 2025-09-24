@@ -134,7 +134,7 @@ class TaskDetailModel(TaskSummaryModel):
 
 class TaskCreateRequest(BaseModel):
     config: Dict[str, Any]
-    env: Dict[str, str] = Field(default_factory=dict)
+    env: Optional[Dict[str, str]] = None
 
 
 class EnvironmentUpdate(BaseModel):
@@ -171,13 +171,13 @@ class ExecutorState:
         with self._lock:
             return dict(self._env_overrides)
 
-    def create_task(self, config: RunnerConfig, env: Dict[str, str]) -> TaskRunner:
-        combined_env = {**self._env_overrides, **env}
-        config_with_env = merge_env_into_config(config, combined_env)
+    def create_task(self, config: RunnerConfig) -> TaskRunner:
+        with self._lock:
+            overrides = dict(self._env_overrides)
+        config_with_env = merge_env_into_config(config, overrides)
         runner = TaskRunner(
             config=config_with_env,
             base_artifact_dir=self._artifacts_dir,
-            env_overrides=combined_env,
         )
         with self._lock:
             self._tasks[runner.task_id] = runner
@@ -298,7 +298,13 @@ def create_task(payload: TaskCreateRequest) -> TaskSummaryModel:
         config = RunnerConfig.model_validate(payload.config)
     except Exception as exc:  # pragma: no cover - validation feedback
         raise HTTPException(status_code=400, detail=f"Invalid configuration: {exc}") from exc
-    runner = state.create_task(config, payload.env)
+    if payload.env:
+        raise HTTPException(
+            status_code=400,
+            detail="Per-task environment overrides are not supported; "
+            "configure executor-level settings instead.",
+        )
+    runner = state.create_task(config)
     return _task_to_summary(runner.snapshot())
 
 
@@ -352,8 +358,11 @@ def download_screenshot(task_id: str, name: str) -> Response:
         runner = state.get_task(task_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Task not found") from None
-    path = runner.get_screenshot_path(name)
-    if not path.exists():
+    try:
+        path = runner.get_screenshot_path(name)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid screenshot name") from None
+    if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="Screenshot not found")
     return FileResponse(path)
 

@@ -140,7 +140,6 @@ class AdminApplication:
             api_key = (form.get("llm_api_key") or "").strip() or None
             enable_vnc = form.get("enable_vnc") == "on"
             headless = form.get("headless") == "on"
-            per_task_env = _parse_env_text(form.get("task_env") or "")
             llm_config: dict[str, object] = {"provider": provider}
             if model:
                 llm_config["model"] = model
@@ -156,7 +155,7 @@ class AdminApplication:
             }
             client = ExecutorClient(endpoint.base_url)
             try:
-                await client.create_task(config=config, env=per_task_env)
+                await client.create_task(config=config)
             except httpx.HTTPError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
             return RedirectResponse(

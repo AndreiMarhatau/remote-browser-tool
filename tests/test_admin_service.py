@@ -53,9 +53,8 @@ class StubExecutorClient:
         self,
         *,
         config: dict[str, object],
-        env: dict[str, str] | None = None,
     ) -> ExecutorTaskSummary:
-        StubExecutorClient.created_payload = {"config": config, "env": env}
+        StubExecutorClient.created_payload = {"config": config}
         summary = (await self.list_tasks())[0]
         return summary
 
@@ -135,13 +134,13 @@ def test_admin_portal_routes(monkeypatch) -> None:
             "llm_provider": "mock",
             "llm_model": "",
             "llm_api_key": "",
-            "task_env": "OPENAI_API_KEY=abc",
         },
         follow_redirects=False,
     )
     assert create_resp.status_code == 303
     assert StubExecutorClient.created_payload is not None
     assert StubExecutorClient.created_payload["config"]["task"]["description"] == "New task"
+    assert "env" not in StubExecutorClient.created_payload
 
     env_resp = client.post(
         "/executors/primary/settings/env",
