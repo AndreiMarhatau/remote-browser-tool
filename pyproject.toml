@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "remote-browser-tool"
+version = "0.1.0"
+description = "Automation orchestrator that coordinates an LLM with a browser session"
+readme = "README.md"
+authors = [{name = "Remote Browser Tool"}]
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.9",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+    "playwright>=1.41",
+    "pyvirtualdisplay>=3.0",
+    "httpx>=0.25",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1.13",
+]
+
+[project.scripts]
+remote-browser-tool = "remote_browser_tool.cli:app"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
