@@ -5,6 +5,7 @@ from __future__ import annotations
 from .browser.playwright_session import PlaywrightBrowserSession
 from .config import BrowserConfig, LLMConfig, NotificationConfig, PortalConfig, RunnerConfig
 from .llm.base import LLMClient
+from .llm.local import LocalLLM
 from .llm.mock import ScriptedLLM
 from .llm.openai_client import OpenAIChatLLM
 from .memory.base import InMemoryStore, MemoryStore
@@ -17,6 +18,8 @@ def build_llm(config: LLMConfig) -> LLMClient:
     provider = config.provider.lower()
     if provider in {"openai", "azure", "openai-compatible"}:
         return OpenAIChatLLM(config)
+    if provider == "local":
+        return LocalLLM(config)
     if provider == "mock":
         directives = [
             LLMDirective.model_validate(item)

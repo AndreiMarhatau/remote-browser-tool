@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Optional
 
@@ -56,7 +57,12 @@ class TaskConfig(BaseModel):
 class RunnerConfig(BaseSettings):
     """Top-level configuration for running the orchestrator."""
 
-    model_config = SettingsConfigDict(env_prefix="REMOTE_BROWSER_TOOL_")
+    model_config = SettingsConfigDict(
+        env_prefix="REMOTE_BROWSER_TOOL_",
+        env_file=(".env",),
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+    )
 
     task: TaskConfig
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -70,14 +76,48 @@ class RunnerConfig(BaseSettings):
     memory_max_entries: int = Field(default=50)
 
 
-def load_config(path: Path | None = None, **overrides: object) -> RunnerConfig:
+def load_config(
+    path: Path | None = None,
+    *,
+    env_file: Path | None = None,
+    **overrides: object,
+) -> RunnerConfig:
     """Load configuration from an optional file and overrides."""
 
-    data: dict[str, object] = {}
+    data: dict[str, Any] = {}
     if path:
         import yaml
 
         data = yaml.safe_load(path.read_text()) or {}
-    data.update(overrides)
-    return RunnerConfig.model_validate(data)
+    if overrides:
+        _deep_update(data, overrides)
+    settings_kwargs: dict[str, object] = {}
+    if env_file is not None:
+        settings_kwargs["_env_file"] = env_file
+    config = RunnerConfig(**data, **settings_kwargs)
+    if not data:
+        return config
+
+    merged = config.model_dump(mode="python")
+    _deep_update(merged, data)
+    return RunnerConfig.model_validate(merged)
+
+
+def _deep_update(target: dict[str, Any], updates: Mapping[str, Any]) -> None:
+    """Recursively merge ``updates`` into ``target`` in-place."""
+
+    for key, value in updates.items():
+        if (
+            isinstance(value, Mapping)
+            and isinstance(existing := target.get(key), Mapping)
+        ):
+            nested: dict[str, Any]
+            if isinstance(existing, dict):
+                nested = existing
+            else:
+                nested = dict(existing)
+            _deep_update(nested, value)
+            target[key] = nested
+        else:
+            target[key] = value
 

@@ -66,6 +66,35 @@ Run with:
 remote-browser-tool run --config task.yaml
 ```
 
+### Environment files and variables
+
+The application also reads defaults from environment variables using the prefix
+`REMOTE_BROWSER_TOOL_`. Copy `.env.example` to `.env` and adjust the values to
+define reusable defaults:
+
+```bash
+cp .env.example .env
+remote-browser-tool run --env-file .env
+```
+
+Any variables defined in the `.env` file are merged with values from YAML
+configuration files or command line overrides. All nested fields use double
+underscores (for example `REMOTE_BROWSER_TOOL_LLM__API_KEY`).
+
+When running inside Docker, mount the `.env` file into `/app/.env` to keep the
+same defaults for every container instance:
+
+```bash
+docker run --rm -it \
+  --env-file .env \
+  -v $(pwd)/.env:/app/.env:ro \
+  remote-browser-tool \
+  --help
+```
+
+The `--env-file` flag on the CLI is optional when the `.env` file resides in the
+current working directory.
+
 ### Docker usage
 
 Build the image:
@@ -74,16 +103,37 @@ Build the image:
 docker build -t remote-browser-tool .
 ```
 
-Run a container, forwarding the portal and VNC ports:
+Run a container for a single task, forwarding the portal and VNC ports:
 
 ```bash
 docker run --rm -it \
-  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  --env-file .env \
+  -v $(pwd)/task.yaml:/app/task.yaml:ro \
+  -v $(pwd)/.env:/app/.env:ro \
   -p 8765:8765 -p 5900:5900 \
-  remote-browser-tool run --config /app/task.yaml
-```
+  remote-browser-tool \
+  run --config /app/task.yaml
+  
 
 Mount a host directory with configuration or browser profiles as needed (e.g. `-v $(pwd)/data:/app/data`).
+
+To keep a long-lived container with persistent environment variables, launch it
+with an idle command and execute tasks when required:
+
+```bash
+docker run -d --name remote-browser-tool \
+  --env-file .env \
+  -v $(pwd)/.env:/app/.env:ro \
+  -p 8765:8765 -p 5900:5900 \
+  --entrypoint python \
+  remote-browser-tool \
+  -c "import time; time.sleep(10**12)"
+
+docker exec -it remote-browser-tool remote-browser-tool run --config /app/task.yaml
+```
+
+The second command reuses the environment from the running container, so tasks
+can be executed repeatedly without restarting the image.
 
 ## Extending the tool
 

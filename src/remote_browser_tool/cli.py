@@ -46,6 +46,13 @@ def run(
         Optional[Path],
         typer.Option("--config", "-c", help="Path to YAML configuration."),
     ] = None,
+    env_file: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--env-file",
+            help="Path to an .env file with default configuration values.",
+        ),
+    ] = None,
     task: Annotated[
         Optional[str],
         typer.Option("--task", help="Override task description."),
@@ -125,7 +132,7 @@ def run(
     if memory_max is not None:
         overrides["memory_max_entries"] = memory_max
 
-    config = load_config(config_path, **overrides)
+    config = load_config(config_path, env_file=env_file, **overrides)
     typer.echo(f"Loaded configuration for task: {config.task.description}")
 
     llm = build_llm(config.llm)
