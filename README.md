@@ -1,209 +1,169 @@
 # remote-browser-tool
 
-Remote Browser Tool orchestrates a large language model (LLM) together with a real browser. The agent can operate the browser automatically, hand control over to a human via VNC when needed, store selective memory between steps, and notify users about its progress.
+`remote-browser-tool` lets a large language model drive a real Chromium browser while you supervise from a web portal or VNC. It
+ships with a Typer CLI, an executor API, and an admin interface so you can queue and inspect automated browsing tasks.
 
-## Features
+The steps below keep everything Docker-first so you can experiment without installing local Python dependencies.
 
-- **Pluggable architecture** – swap the LLM provider, notification channel, or browser backend by implementing simple interfaces.
-- **Playwright-powered browser** – launches Chromium with optional persistent profiles and exposes it via VNC (Xvfb + x11vnc) for manual intervention.
-- **Structured LLM directives** – LLM responses are parsed into typed directives (`continue`, `wait`, `wait_for_user`, `finished`, `failed`) with rich browser actions.
-- **User interaction portal** – lightweight HTTP page with a “Finished” button ensures the agent only resumes after manual tasks are completed.
-- **Notification pipeline** – send events to the console (default) or extend with custom channels.
-- **Memory management** – configurable rolling memory store keeps the most relevant notes for the LLM context.
-- **Docker-ready** – build a container image with all system dependencies, including Playwright browsers and VNC tooling.
+## Start with the simplest setup
 
-## Installation
+1. Build the image once:
+   ```bash
+   docker build -t remote-browser-tool .
+   ```
+2. Export the OpenAI settings (the executor uses them to talk to the model):
+   ```bash
+   export REMOTE_BROWSER_TOOL_LLM__PROVIDER=openai
+   export REMOTE_BROWSER_TOOL_LLM__MODEL=gpt-4o-mini
+   export REMOTE_BROWSER_TOOL_LLM__API_KEY=sk-...
+   ```
+3. Run a one-off task in an interactive container:
+   ```bash
+   docker run --rm -it \
+    -e REMOTE_BROWSER_TOOL_LLM__PROVIDER \
+    -e REMOTE_BROWSER_TOOL_LLM__MODEL \
+    -e REMOTE_BROWSER_TOOL_LLM__API_KEY \
+     -p 8765:8765 -p 5900:5900 \
+     remote-browser-tool \
+     run \
+       --task "Try the remote browser tool" \
+       --goal "Explain what happened in the portal when you finish"
+   ```
 
-```bash
-pip install -e .[dev]
-playwright install chromium
-```
+The CLI prints both a browser portal URL and a VNC connection string whenever a manual step is required. Open them from your host
+machine, complete the requested action, and click **Finished** in the portal to resume the run. Stop the task at any time with
+`Ctrl+C`.
 
-You may need `x11vnc` and `Xvfb` installed locally to expose the browser via VNC when running outside Docker.
+## Add what you need next
 
-## Quick start
+Each section below adds a small tweak. Pick the one you need and keep the rest of your setup unchanged.
 
-Run a task directly from the command line:
+### Reuse a task definition with a YAML file
 
-```bash
-remote-browser-tool run \
-  --task "Research latest product updates" \
-  --goal "Summarize findings in less than 200 words" \
-  --llm-provider openai \
-  --model gpt-4-turbo \
-  --api-key $OPENAI_API_KEY \
-  --enable-vnc --portal-port 8765
-```
+1. Create `task.yaml` with your preferred defaults:
+   ```yaml
+   task:
+     description: "Book a train ticket from Paris to Berlin"
+     goal: "Ticket purchased with confirmation number"
+   llm:
+     provider: openai
+     model: gpt-4o
+   browser:
+     enable_vnc: true
+     headless: false
+   portal:
+     port: 8765
+   memory_max_entries: 40
+   ```
+2. Mount the file when launching a task container:
+   ```bash
+    docker run --rm -it \
+      -e REMOTE_BROWSER_TOOL_LLM__PROVIDER \
+      -e REMOTE_BROWSER_TOOL_LLM__MODEL \
+      -e REMOTE_BROWSER_TOOL_LLM__API_KEY \
+      -v $(pwd)/task.yaml:/app/task.yaml:ro \
+      -p 8765:8765 -p 5900:5900 \
+      remote-browser-tool run --config /app/task.yaml
+   ```
 
-When the agent requests manual help, the console notifier prints connection details and the portal URL. Connect to the VNC endpoint (default `localhost:590X`) to control the browser and mark the step finished from the portal web page.
+### Run the executor as a long-lived service
 
-### YAML configuration
-
-Create a configuration file to avoid lengthy command arguments:
-
-```yaml
-# task.yaml
-task:
-  description: "Book a train ticket from Paris to Berlin"
-  goal: "Ticket purchased with confirmation number"
-llm:
-  provider: openai
-  model: gpt-4o
-browser:
-  headless: false
-  enable_vnc: true
-portal:
-  host: 0.0.0.0
-  port: 8765
-notifications:
-  channel: console
-memory_max_entries: 40
-```
-
-Run with:
-
-```bash
-remote-browser-tool run --config task.yaml
-```
-
-## Admin portal and executor service
-
-The toolkit now ships with a long-running executor HTTP service together with
-an admin web portal. The executor wraps the orchestrator in a REST API so that
-tasks can be enqueued, inspected, and controlled remotely. The admin portal
-aggregates one or more executors, offering dashboards for task progress,
-manual hand-offs, memory inspection, and screenshot browsing.
-
-Start an executor instance:
+Keep the LLM key private to the executor—the admin portal does not need it.
 
 ```bash
-remote-browser-tool executor --host 0.0.0.0 --port 9001
+docker network create remote-browser-tool || true
+
+docker run -d --name rbt-executor \
+  --network remote-browser-tool \
+  -e REMOTE_BROWSER_TOOL_LLM__PROVIDER \
+  -e REMOTE_BROWSER_TOOL_LLM__MODEL \
+  -e REMOTE_BROWSER_TOOL_LLM__API_KEY \
+  -p 9001:9001 -p 8765:8765 -p 5900:5900 \
+  -v executor_artifacts:/app/executor_artifacts \
+  remote-browser-tool executor --host 0.0.0.0 --port 9001
 ```
 
-This exposes endpoints such as:
+The service exposes:
 
-- `POST /tasks` – enqueue a task by submitting a configuration payload.
-- `GET /tasks` / `GET /tasks/{id}` – inspect status, logs, memory, and actions.
-- `POST /tasks/{id}/pause` / `resume` – request manual control or resume the LLM.
-- `GET /tasks/{id}/screenshots/{name}` – retrieve per-step screenshots.
-- `PUT /settings/env` – manage environment overrides stored by the executor.
-- `GET /health` – report browser and LLM availability information.
+- `http://localhost:9001` for API calls from the admin portal.
+- `http://localhost:8765` for the user portal when a task is waiting on you.
+- `localhost:5900` for the VNC bridge.
 
-Launch the admin portal and point it at one or more executors:
+Stop the executor with `docker stop rbt-executor`.
+
+### Launch the admin portal and attach executors
+
+Run the admin UI on the same Docker network so it can reach your executors. No API key is required.
 
 ```bash
-remote-browser-tool admin \
-  --executor primary=http://localhost:9001 \
-  --executor backup=http://agent-container:9001 \
+docker run --rm --name rbt-admin \
+  --network remote-browser-tool \
+  -p 8080:8080 \
+  remote-browser-tool admin \
+  --executor default=http://rbt-executor:9001 \
   --host 0.0.0.0 --port 8080
 ```
 
-From the portal you can:
+Open [http://localhost:8080](http://localhost:8080) to submit tasks and monitor progress. Add more executors by repeating the
+`docker run` command above with a different container name and port, then passing additional `--executor label=url` options to the
+admin command.
 
-- Enqueue tasks with a simple form that relies on executor-level configuration defaults.
-- Monitor live task lists, status transitions, and detailed step histories.
-- Browse orchestrator notifications, memory entries, and browser actions
-  (with linked screenshots captured after each action).
-- Pause execution to take manual control and resume once complete.
-- Update executor-wide environment overrides (for example API keys) without
-  restarting containers.
-- Track health information (browser availability, LLM configuration) across
-  every registered executor.
-
-Both services are regular FastAPI applications, making it easy to deploy them
-behind reverse proxies or with process managers such as systemd.
-
-### Environment files and variables
-
-The application also reads defaults from environment variables using the prefix
-`REMOTE_BROWSER_TOOL_`. Copy `.env.example` to `.env` and adjust the values to
-define reusable defaults:
+Want the admin without any executors yet? Start it alone and add executors later from the UI:
 
 ```bash
-cp .env.example .env
-remote-browser-tool run --env-file .env
+docker run --rm --name rbt-admin \
+  -p 8080:8080 \
+  remote-browser-tool admin --host 0.0.0.0 --port 8080
 ```
 
-Any variables defined in the `.env` file are merged with values from YAML
-configuration files or command line overrides. All nested fields use double
-underscores (for example `REMOTE_BROWSER_TOOL_LLM__API_KEY`).
+### Use Docker Compose for a persistent pair
 
-When running inside Docker, mount the `.env` file into `/app/.env` to keep the
-same defaults for every container instance:
+If you prefer a single command that brings up both services and keeps artifacts in a named volume:
+
+1. Copy the environment template and set your OpenAI settings (only the executor consumes them):
+   ```bash
+   cp .env.example .env
+   cat <<'VARS' >> .env
+REMOTE_BROWSER_TOOL_LLM__PROVIDER=openai
+REMOTE_BROWSER_TOOL_LLM__MODEL=gpt-4o-mini
+REMOTE_BROWSER_TOOL_LLM__API_KEY=sk-...
+VARS
+   ```
+2. Start the services:
+   ```bash
+   docker compose up -d executor admin
+   ```
+3. Visit the admin UI at [http://localhost:8080](http://localhost:8080). Tear everything down when finished:
+   ```bash
+   docker compose down
+   ```
+
+Task artifacts live in the named volume `executor_artifacts`. Remove it with `docker compose down -v` if you want a clean slate.
+You can also launch a single service (`docker compose up -d executor` or `docker compose up admin`) depending on what you need.
+
+### Share environment defaults across commands
+
+The CLI reads variables prefixed with `REMOTE_BROWSER_TOOL_...`. Update `.env` (or pass `-e` flags) with overrides such as:
 
 ```bash
-docker run --rm -it \
-  --env-file .env \
-  -v $(pwd)/.env:/app/.env:ro \
-  remote-browser-tool \
-  --help
+REMOTE_BROWSER_TOOL_LLM__PROVIDER=openai
+REMOTE_BROWSER_TOOL_LLM__MODEL=gpt-4o-mini
+REMOTE_BROWSER_TOOL_BROWSER__HEADLESS=true
+REMOTE_BROWSER_TOOL_BROWSER__ENABLE_VNC=false
+REMOTE_BROWSER_TOOL_PORTAL__PORT=8888
 ```
 
-The `--env-file` flag on the CLI is optional when the `.env` file resides in the
-current working directory.
+Compose picks these up automatically; for single containers add extra `-e` arguments or mount a custom env file with `--env-file`.
 
-### Docker usage
+### Keep artifacts and configs outside the container
 
-Build the image:
+- The executor writes logs, screenshots, and downloads to `/app/executor_artifacts`. Map it to a host directory by replacing the
+  named volume with a bind mount (for example, `-v $(pwd)/artifacts:/app/executor_artifacts`).
+- Bind mount a directory with reusable configs or credentials (for example, `-v $(pwd)/configs:/configs`) and reference them from
+your YAML files.
 
-```bash
-docker build -t remote-browser-tool .
-```
+---
 
-Run a container for a single task, forwarding the portal and VNC ports:
-
-```bash
-docker run --rm -it \
-  --env-file .env \
-  -v $(pwd)/task.yaml:/app/task.yaml:ro \
-  -v $(pwd)/.env:/app/.env:ro \
-  -p 8765:8765 -p 5900:5900 \
-  remote-browser-tool \
-  run --config /app/task.yaml
-  
-
-Mount a host directory with configuration or browser profiles as needed (e.g. `-v $(pwd)/data:/app/data`).
-
-To keep a long-lived container with persistent environment variables, launch it
-with an idle command and execute tasks when required:
-
-```bash
-docker run -d --name remote-browser-tool \
-  --env-file .env \
-  -v $(pwd)/.env:/app/.env:ro \
-  -p 8765:8765 -p 5900:5900 \
-  --entrypoint python \
-  remote-browser-tool \
-  -c "import time; time.sleep(10**12)"
-
-docker exec -it remote-browser-tool remote-browser-tool run --config /app/task.yaml
-```
-
-The second command reuses the environment from the running container, so tasks
-can be executed repeatedly without restarting the image.
-
-## Extending the tool
-
-Implement custom providers by subclassing the relevant base classes:
-
-- `remote_browser_tool.llm.base.LLMClient` for new LLM backends.
-- `remote_browser_tool.browser.base.BrowserSession` for different browsers or remote drivers.
-- `remote_browser_tool.notifications.base.Notifier` for email, messaging apps, etc.
-- `remote_browser_tool.user_portal.base.UserInteractionPortal` for bespoke manual-intervention flows.
-
-Register your implementations in `remote_browser_tool.factory` or replace the factory entirely when wiring your application.
-
-## Development
-
-Run the automated tests:
-
-```bash
-pytest
-```
-
-Format and lint the code with Ruff:
-
-```bash
-ruff check .
-```
-
+Need deeper customization? Browse the source under `src/remote_browser_tool` to plug in different LLM providers, browser backends,
+or notification channels. The Docker image already contains Playwright with Chromium, so any custom code you add can reuse the same
+base image.
