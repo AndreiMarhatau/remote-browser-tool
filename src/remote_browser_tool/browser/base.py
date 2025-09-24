@@ -41,3 +41,7 @@ class BrowserSession(ABC):
     def snapshot(self) -> BrowserState:
         """Return the current state for context."""
 
+    @abstractmethod
+    def screenshot(self) -> bytes:
+        """Capture a PNG screenshot of the current browser viewport."""
+

@@ -1,0 +1,63 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card">
+  <h2>Executor Status</h2>
+  {% if executors|length == 0 %}
+    <p>No executor endpoints configured. Start the admin service with the <code>--executor</code> option.</p>
+  {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>Executor</th>
+          <th>Browser</th>
+          <th>LLM</th>
+          <th>Overrides</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in executors %}
+          <tr>
+            <td>{{ item.endpoint.label }}</td>
+            <td>
+              {% if item.error %}
+                <span class="status-pill status-unknown">Unavailable</span>
+              {% elif item.health %}
+                <span class="status-pill {{ status_class(item.health.browser.status) }}">
+                  {{ item.health.browser.status|capitalize }}
+                </span>
+                {% if item.health.browser.detail %}<div>{{ item.health.browser.detail }}</div>{% endif %}
+              {% else %}
+                <span class="status-pill status-unknown">Unknown</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if item.health %}
+                <span class="status-pill {{ status_class(item.health.llm.status) }}">
+                  {{ item.health.llm.status|replace('_', ' ')|capitalize }}
+                </span>
+                {% if item.health.llm.provider %}<div>Provider: {{ item.health.llm.provider }}</div>{% endif %}
+              {% elif item.error %}
+                <span class="status-pill status-unknown">Unavailable</span>
+              {% else %}
+                <span class="status-pill status-unknown">Unknown</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if item.health %}
+                {{ item.health.env_overrides|length }} keys
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>
+              <a href="/executors/{{ item.endpoint.key }}">Open</a>
+              {% if item.error %}<div class="error">{{ item.error }}</div>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+{% endblock %}

@@ -66,6 +66,53 @@ Run with:
 remote-browser-tool run --config task.yaml
 ```
 
+## Admin portal and executor service
+
+The toolkit now ships with a long-running executor HTTP service together with
+an admin web portal. The executor wraps the orchestrator in a REST API so that
+tasks can be enqueued, inspected, and controlled remotely. The admin portal
+aggregates one or more executors, offering dashboards for task progress,
+manual hand-offs, memory inspection, and screenshot browsing.
+
+Start an executor instance:
+
+```bash
+remote-browser-tool executor --host 0.0.0.0 --port 9001
+```
+
+This exposes endpoints such as:
+
+- `POST /tasks` – enqueue a task by submitting a configuration payload.
+- `GET /tasks` / `GET /tasks/{id}` – inspect status, logs, memory, and actions.
+- `POST /tasks/{id}/pause` / `resume` – request manual control or resume the LLM.
+- `GET /tasks/{id}/screenshots/{name}` – retrieve per-step screenshots.
+- `PUT /settings/env` – manage environment overrides stored by the executor.
+- `GET /health` – report browser and LLM availability information.
+
+Launch the admin portal and point it at one or more executors:
+
+```bash
+remote-browser-tool admin \
+  --executor primary=http://localhost:9001 \
+  --executor backup=http://agent-container:9001 \
+  --host 0.0.0.0 --port 8080
+```
+
+From the portal you can:
+
+- Enqueue tasks with a simple form that relies on executor-level configuration defaults.
+- Monitor live task lists, status transitions, and detailed step histories.
+- Browse orchestrator notifications, memory entries, and browser actions
+  (with linked screenshots captured after each action).
+- Pause execution to take manual control and resume once complete.
+- Update executor-wide environment overrides (for example API keys) without
+  restarting containers.
+- Track health information (browser availability, LLM configuration) across
+  every registered executor.
+
+Both services are regular FastAPI applications, making it easy to deploy them
+behind reverse proxies or with process managers such as systemd.
+
 ### Environment files and variables
 
 The application also reads defaults from environment variables using the prefix
