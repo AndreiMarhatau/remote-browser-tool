@@ -16,8 +16,10 @@ class LocalLLM(LLMClient):
         params = config.parameters or {}
         self._message = params.get(
             "message",
-            "Manual control required. Complete the next step in the browser and"
-            " confirm completion in the portal.",
+            (
+                "Manual control required. Complete the next step in the browser and "
+                "confirm completion in the portal."
+            ),
         )
         self._request = UserInterventionRequest(
             reason=params.get(
@@ -26,8 +28,10 @@ class LocalLLM(LLMClient):
             ),
             instructions=params.get(
                 "instructions",
-                "Connect to the VNC session, perform the necessary actions,"
-                " then click 'Finished' in the portal.",
+                (
+                    "Connect to the VNC session, perform the necessary actions, "
+                    "then click 'Finished' in the portal."
+                ),
             ),
             allow_finish_without_return=params.get(
                 "allow_finish_without_return",
