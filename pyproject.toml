@@ -24,6 +24,9 @@ dependencies = [
     "python-multipart>=0.0.9",
 ]
 
+[tool.setuptools.package-data]
+"remote_browser_tool.admin" = ["templates/*.html"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",
