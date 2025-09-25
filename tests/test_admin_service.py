@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from remote_browser_tool.admin import service as admin_service
@@ -21,11 +23,16 @@ class StubExecutorClient:
     paused_calls: list[tuple[str, str, str]] = []
     resumed_calls: list[str] = []
     screenshot_calls: list[tuple[str, str]] = []
+    instantiated_urls: list[str] = []
 
     def __init__(self, base_url: str, *, timeout: float = 15.0) -> None:
         self.base_url = base_url
+        StubExecutorClient.instantiated_urls.append(base_url)
 
     async def get_health(self) -> ExecutorHealth:
+        if "offline" in self.base_url:
+            request = httpx.Request("GET", f"{self.base_url}/health")
+            raise httpx.ConnectError("unable to connect", request=request)
         return ExecutorHealth(
             browser={"status": "available"},
             llm={"status": "configured", "provider": "mock"},
@@ -114,6 +121,7 @@ def test_admin_portal_routes(monkeypatch) -> None:
     StubExecutorClient.paused_calls = []
     StubExecutorClient.resumed_calls = []
     StubExecutorClient.screenshot_calls = []
+    StubExecutorClient.instantiated_urls = []
     monkeypatch.setattr(admin_service, "ExecutorClient", StubExecutorClient)
     app = admin_service.create_admin_app(["primary=http://executor"])
     client = TestClient(app)
@@ -124,14 +132,18 @@ def test_admin_portal_routes(monkeypatch) -> None:
 
     add_resp = client.post(
         "/executors",
-        data={"label": "Secondary", "base_url": "http://other-executor"},
+        data={"label": "Secondary", "base_url": "other-executor:9001"},
         follow_redirects=False,
     )
     assert add_resp.status_code == 303
     assert add_resp.headers["location"].endswith("/executors/secondary")
+    assert any(
+        url == "http://other-executor:9001" for url in StubExecutorClient.instantiated_urls
+    )
 
     secondary_dashboard = client.get("/executors/secondary")
     assert secondary_dashboard.status_code == 200
+    assert "http://other-executor:9001" in secondary_dashboard.text
 
     dashboard = client.get("/executors/primary")
     assert dashboard.status_code == 200
@@ -183,3 +195,51 @@ def test_admin_portal_routes(monkeypatch) -> None:
     screenshot = client.get("/executors/primary/tasks/task-1/screenshots/shot.png")
     assert screenshot.status_code == 200
     assert screenshot.content == b"image"
+
+    removal_resp = client.post(
+        "/executors/secondary/delete",
+        follow_redirects=False,
+    )
+    assert removal_resp.status_code == 303
+    home_after_removal = client.get("/")
+    assert home_after_removal.status_code == 200
+    assert "Secondary" not in home_after_removal.text
+
+    missing_input = client.post(
+        "/executors",
+        data={"label": "", "base_url": ""},
+    )
+    assert missing_input.status_code == 400
+    assert "Executor address is required" in missing_input.text
+
+    offline_resp = client.post(
+        "/executors",
+        data={"label": "Offline", "base_url": "offline-executor:9001"},
+    )
+    assert offline_resp.status_code == 502
+    assert "Could not connect" in offline_resp.text
+    home_after_failure = client.get("/")
+    assert "offline-executor" not in home_after_failure.text
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("example.com", "http://example.com"),
+        ("https://example.com", "https://example.com"),
+        ("executor:9001", "http://executor:9001"),
+        (" http://executor.local/ ", "http://executor.local"),
+        ("https://executor.local/api/", "https://executor.local/api"),
+    ],
+)
+def test_normalize_executor_base_url_valid(raw: str, expected: str) -> None:
+    assert admin_service._normalize_executor_base_url(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["", "ftp://example.com", "http:///missing", "http://"],
+)
+def test_normalize_executor_base_url_invalid(raw: str) -> None:
+    with pytest.raises(ValueError):
+        admin_service._normalize_executor_base_url(raw)

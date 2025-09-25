@@ -77,8 +77,13 @@ class ExecutorRegistry:
             raise HTTPException(status_code=404, detail="Executor not found") from None
 
     def add(self, label: str, base_url: str) -> ExecutorEndpoint:
-        normalized_label = label.strip() or base_url.strip()
-        normalized_url = base_url.strip()
+        normalized_url = _normalize_executor_base_url(base_url)
+        cleaned_label = label.strip()
+        if cleaned_label:
+            normalized_label = cleaned_label
+        else:
+            parsed = httpx.URL(normalized_url)
+            normalized_label = parsed.host or normalized_url
         for item in self._items.values():
             if item.base_url == normalized_url:
                 return item
@@ -86,6 +91,12 @@ class ExecutorRegistry:
         endpoint = ExecutorEndpoint(key=key, label=normalized_label, base_url=normalized_url)
         self._items[key] = endpoint
         return endpoint
+
+    def remove(self, key: str) -> None:
+        try:
+            del self._items[key]
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Executor not found") from None
 
     def _generate_unique_key(self, label: str) -> str:
         base_key = _slugify(label)
@@ -107,8 +118,7 @@ class AdminApplication:
         app = FastAPI(title="Remote Browser Tool Admin")
         router = APIRouter()
 
-        @router.get("/", response_class=HTMLResponse, name="admin_home")
-        async def home(request: Request) -> HTMLResponse:
+        async def build_home_rows() -> list[dict[str, object]]:
             rows: list[dict[str, object]] = []
             for endpoint in self._registry.all():
                 client = ExecutorClient(endpoint.base_url)
@@ -119,22 +129,52 @@ class AdminApplication:
                 except httpx.HTTPError as exc:
                     error = str(exc)
                 rows.append({"endpoint": endpoint, "health": health, "error": error})
+            return rows
+
+        async def render_home(
+            request: Request,
+            *,
+            status_code: int = 200,
+            error_message: str | None = None,
+        ) -> HTMLResponse:
+            rows = await build_home_rows()
             return templates.TemplateResponse(
                 request,
                 "index.html",
-                {"executors": rows},
+                {"request": request, "executors": rows, "error_message": error_message},
+                status_code=status_code,
             )
 
+        @router.get("/", response_class=HTMLResponse, name="admin_home")
+        async def home(request: Request) -> HTMLResponse:
+            return await render_home(request)
+
         @router.post("/executors", name="register_executor")
-        async def register_executor(request: Request) -> RedirectResponse:
+        async def register_executor(request: Request) -> Response:
             form = await request.form()
             label = (form.get("label") or "").strip()
             base_url = (form.get("base_url") or "").strip()
-            if not base_url:
-                raise HTTPException(status_code=400, detail="Executor URL is required")
-            endpoint = self._registry.add(label=label, base_url=base_url)
+            try:
+                normalized_url = _normalize_executor_base_url(base_url)
+            except ValueError as exc:
+                return await render_home(request, status_code=400, error_message=str(exc))
+            client = ExecutorClient(normalized_url)
+            try:
+                await client.get_health()
+            except httpx.HTTPError as exc:
+                message = f"Could not connect to executor at {normalized_url}: {exc}"
+                return await render_home(request, status_code=502, error_message=message)
+            endpoint = self._registry.add(label=label, base_url=normalized_url)
             return RedirectResponse(
                 request.url_for("executor_dashboard", key=endpoint.key),
+                status_code=303,
+            )
+
+        @router.post("/executors/{key}/delete", name="remove_executor")
+        async def remove_executor(request: Request, key: str) -> RedirectResponse:
+            self._registry.remove(key)
+            return RedirectResponse(
+                request.url_for("admin_home"),
                 status_code=303,
             )
 
@@ -314,6 +354,27 @@ def build_executor_endpoints(specs: Iterable[str]) -> list[ExecutorEndpoint]:
     return registry.all()
 
 
+def _normalize_executor_base_url(raw: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        raise ValueError("Executor address is required")
+    if "://" not in value:
+        value = f"http://{value}"
+    try:
+        parsed = httpx.URL(value)
+    except httpx.InvalidURL as exc:
+        raise ValueError("Executor address is not a valid URL") from exc
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Executor URL must use http:// or https://")
+    if not parsed.host:
+        raise ValueError("Executor URL must include a hostname or IP address")
+    sanitized = parsed.copy_with(query=None, fragment=None)
+    if sanitized.path and sanitized.path != "/":
+        sanitized = sanitized.copy_with(path=sanitized.path.rstrip("/"))
+    normalized = str(sanitized)
+    return normalized.rstrip("/")
+
+
 def _slugify(label: str) -> str:
     cleaned = [ch.lower() if ch.isalnum() else "-" for ch in label]
     slug = "".join(cleaned).strip("-")
@@ -325,3 +386,9 @@ def create_admin_app(executor_specs: Iterable[str]) -> FastAPI:
     registry = ExecutorRegistry(endpoints)
     app = AdminApplication(registry).create_app()
     return app
+    def remove(self, key: str) -> None:
+        try:
+            del self._items[key]
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Executor not found") from None
+

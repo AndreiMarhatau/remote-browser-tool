@@ -115,12 +115,28 @@
       button.secondary, input.secondary {
         background: #475569;
       }
+      button.danger, input.danger {
+        background: #dc2626;
+      }
       button:hover, input[type="submit"]:hover {
         background: #1d4ed8;
+      }
+      button.danger:hover, input.danger:hover {
+        background: #b91c1c;
       }
       .error {
         color: #b91c1c;
         font-weight: 600;
+      }
+      .alert {
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        margin-top: 1rem;
+      }
+      .alert.error {
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        color: #b91c1c;
       }
       .hint {
         color: #4b5563;
@@ -144,6 +160,16 @@
       .list li {
         padding: 0.4rem 0;
         border-bottom: 1px solid #e5e7eb;
+      }
+      .table-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .inline-form {
+        display: inline;
+        margin: 0;
       }
     </style>
   </head>
