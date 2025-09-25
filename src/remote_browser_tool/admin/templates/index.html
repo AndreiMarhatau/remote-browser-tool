@@ -2,6 +2,9 @@
 {% block content %}
 <div class="card">
   <h2>Connect an Executor</h2>
+  {% if error_message %}
+    <div class="alert error">{{ error_message }}</div>
+  {% endif %}
   <form method="post" action="/executors" class="form-grid">
     <div class="form-row">
       <label for="label">Label</label>
@@ -12,8 +15,8 @@
       <input
         id="base_url"
         name="base_url"
-        type="url"
-        placeholder="https://executor-host:9001"
+        type="text"
+        placeholder="executor-host:9001"
         required
       />
     </div>
@@ -75,13 +78,22 @@
               {% else %}
                 —
               {% endif %}
-            </td>
-            <td>
+          </td>
+          <td>
+            <div class="table-actions">
               <a href="/executors/{{ item.endpoint.key }}">Open</a>
-              {% if item.error %}<div class="error">{{ item.error }}</div>{% endif %}
-            </td>
-          </tr>
-        {% endfor %}
+              <form
+                method="post"
+                action="/executors/{{ item.endpoint.key }}/delete"
+                class="inline-form"
+              >
+                <button type="submit" class="danger">Remove</button>
+              </form>
+            </div>
+            {% if item.error %}<div class="error">{{ item.error }}</div>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
       </tbody>
     </table>
   {% endif %}
