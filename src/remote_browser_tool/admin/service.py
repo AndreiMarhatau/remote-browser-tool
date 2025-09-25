@@ -62,8 +62,10 @@ class ExecutorEndpoint:
 
 
 class ExecutorRegistry:
-    def __init__(self, endpoints: Iterable[ExecutorEndpoint]) -> None:
-        self._items: dict[str, ExecutorEndpoint] = {item.key: item for item in endpoints}
+    def __init__(self, endpoints: Iterable[ExecutorEndpoint] | None = None) -> None:
+        self._items: dict[str, ExecutorEndpoint] = {}
+        for endpoint in endpoints or []:
+            self._items[endpoint.key] = endpoint
 
     def all(self) -> list[ExecutorEndpoint]:
         return list(self._items.values())
@@ -73,6 +75,28 @@ class ExecutorRegistry:
             return self._items[key]
         except KeyError:
             raise HTTPException(status_code=404, detail="Executor not found") from None
+
+    def add(self, label: str, base_url: str) -> ExecutorEndpoint:
+        normalized_label = label.strip() or base_url.strip()
+        normalized_url = base_url.strip()
+        for item in self._items.values():
+            if item.base_url == normalized_url:
+                return item
+        key = self._generate_unique_key(normalized_label)
+        endpoint = ExecutorEndpoint(key=key, label=normalized_label, base_url=normalized_url)
+        self._items[key] = endpoint
+        return endpoint
+
+    def _generate_unique_key(self, label: str) -> str:
+        base_key = _slugify(label)
+        if not base_key:
+            base_key = "executor"
+        key = base_key
+        counter = 1
+        while key in self._items:
+            counter += 1
+            key = f"{base_key}-{counter}"
+        return key
 
 
 class AdminApplication:
@@ -99,6 +123,19 @@ class AdminApplication:
                 request,
                 "index.html",
                 {"executors": rows},
+            )
+
+        @router.post("/executors", name="register_executor")
+        async def register_executor(request: Request) -> RedirectResponse:
+            form = await request.form()
+            label = (form.get("label") or "").strip()
+            base_url = (form.get("base_url") or "").strip()
+            if not base_url:
+                raise HTTPException(status_code=400, detail="Executor URL is required")
+            endpoint = self._registry.add(label=label, base_url=base_url)
+            return RedirectResponse(
+                request.url_for("executor_dashboard", key=endpoint.key),
+                status_code=303,
             )
 
         @router.get("/executors/{key}", response_class=HTMLResponse, name="executor_dashboard")
@@ -266,29 +303,15 @@ def _parse_env_text(value: str) -> dict[str, str]:
 
 
 def build_executor_endpoints(specs: Iterable[str]) -> list[ExecutorEndpoint]:
-    endpoints: list[ExecutorEndpoint] = []
-    seen_keys: set[str] = set()
+    registry = ExecutorRegistry()
     for index, raw in enumerate(specs):
         if "=" in raw:
             label, url = raw.split("=", 1)
         else:
             label = f"Executor {index + 1}"
             url = raw
-        key = _slugify(label)
-        base_key = key
-        counter = 1
-        while key in seen_keys:
-            counter += 1
-            key = f"{base_key}-{counter}"
-        seen_keys.add(key)
-        endpoints.append(
-            ExecutorEndpoint(
-                key=key,
-                label=label.strip() or url,
-                base_url=url.strip(),
-            )
-        )
-    return endpoints
+        registry.add(label=label, base_url=url)
+    return registry.all()
 
 
 def _slugify(label: str) -> str:

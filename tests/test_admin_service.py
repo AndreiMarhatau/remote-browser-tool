@@ -122,6 +122,17 @@ def test_admin_portal_routes(monkeypatch) -> None:
     assert home.status_code == 200
     assert "Executor Status" in home.text
 
+    add_resp = client.post(
+        "/executors",
+        data={"label": "Secondary", "base_url": "http://other-executor"},
+        follow_redirects=False,
+    )
+    assert add_resp.status_code == 303
+    assert add_resp.headers["location"].endswith("/executors/secondary")
+
+    secondary_dashboard = client.get("/executors/secondary")
+    assert secondary_dashboard.status_code == 200
+
     dashboard = client.get("/executors/primary")
     assert dashboard.status_code == 200
     assert "Demo task" in dashboard.text

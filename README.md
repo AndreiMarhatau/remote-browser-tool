@@ -91,29 +91,36 @@ The service exposes:
 
 Stop the executor with `docker stop rbt-executor`.
 
+The custom Docker network keeps container DNS simple when both services run side by side, but it's optional. When the admin runs
+elsewhere, omit `--network remote-browser-tool` and keep the published ports so the admin can reach the executor via the host's
+address.
+
 ### Launch the admin portal and attach executors
 
-Run the admin UI on the same Docker network so it can reach your executors. No API key is required.
-
-```bash
-docker run --rm --name rbt-admin \
-  --network remote-browser-tool \
-  -p 8080:8080 \
-  remote-browser-tool admin \
-  --executor default=http://rbt-executor:9001 \
-  --host 0.0.0.0 --port 8080
-```
-
-Open [http://localhost:8080](http://localhost:8080) to submit tasks and monitor progress. Add more executors by repeating the
-`docker run` command above with a different container name and port, then passing additional `--executor label=url` options to the
-admin command.
-
-Want the admin without any executors yet? Start it alone and add executors later from the UI:
+Run the admin UI anywhere that can reach your executors over HTTP—no shared Docker network required and no API key is needed.
 
 ```bash
 docker run --rm --name rbt-admin \
   -p 8080:8080 \
   remote-browser-tool admin --host 0.0.0.0 --port 8080
+```
+
+Open [http://localhost:8080](http://localhost:8080) and use the **Connect an Executor** form to register each executor by URL.
+Point it at whatever address is reachable from the admin container, such as `http://host.docker.internal:9001` when both are on
+the same machine or `http://192.168.1.42:9001` when the executor runs elsewhere. As soon as you submit the form the admin polls
+that executor in real time. The list is kept in memory, so re-add endpoints after restarting the admin or pre-seed them with CLI
+flags.
+
+Executors can run on different hosts and networks. Publish the executor's API port (`-p 9001:9001`) and make sure firewalls allow
+incoming connections from wherever the admin runs. If you still prefer to pre-seed endpoints when starting the admin, pass
+`--executor label=url` flags:
+
+```bash
+docker run --rm --name rbt-admin \
+  -p 8080:8080 \
+  remote-browser-tool admin \
+  --executor default=http://rbt-executor:9001 \
+  --host 0.0.0.0 --port 8080
 ```
 
 ### Use Docker Compose for a persistent pair
