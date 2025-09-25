@@ -1,9 +1,32 @@
 {% extends "layout.html" %}
 {% block content %}
 <div class="card">
+  <h2>Connect an Executor</h2>
+  <form method="post" action="/executors" class="form-grid">
+    <div class="form-row">
+      <label for="label">Label</label>
+      <input id="label" name="label" type="text" placeholder="Optional friendly name" />
+    </div>
+    <div class="form-row">
+      <label for="base_url">Executor URL</label>
+      <input
+        id="base_url"
+        name="base_url"
+        type="url"
+        placeholder="https://executor-host:9001"
+        required
+      />
+    </div>
+    <div class="form-actions">
+      <button type="submit">Add executor</button>
+    </div>
+  </form>
+  <p class="hint">Executors can run on any host that the admin service can reach over HTTP.</p>
+</div>
+<div class="card">
   <h2>Executor Status</h2>
   {% if executors|length == 0 %}
-    <p>No executor endpoints configured. Start the admin service with the <code>--executor</code> option.</p>
+    <p>No executor endpoints configured yet. Use the form above to connect one.</p>
   {% else %}
     <table>
       <thead>
@@ -18,7 +41,10 @@
       <tbody>
         {% for item in executors %}
           <tr>
-            <td>{{ item.endpoint.label }}</td>
+            <td>
+              <div>{{ item.endpoint.label }}</div>
+              <div class="muted">{{ item.endpoint.base_url }}</div>
+            </td>
             <td>
               {% if item.error %}
                 <span class="status-pill status-unknown">Unavailable</span>

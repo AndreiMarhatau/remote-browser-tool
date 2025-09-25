@@ -90,6 +90,19 @@
       form textarea {
         min-height: 120px;
       }
+      .form-grid {
+        display: grid;
+        gap: 1rem;
+        max-width: 640px;
+      }
+      .form-row label {
+        margin-top: 0;
+      }
+      .form-actions {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
       button, input[type="submit"] {
         background: #2563eb;
         color: #fff;
@@ -108,6 +121,15 @@
       .error {
         color: #b91c1c;
         font-weight: 600;
+      }
+      .hint {
+        color: #4b5563;
+        margin-top: 0.75rem;
+      }
+      .muted {
+        color: #6b7280;
+        font-size: 0.9rem;
+        margin-top: 0.2rem;
       }
       .grid {
         display: grid;
